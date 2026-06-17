@@ -1,0 +1,376 @@
+#!/usr/bin/env python3
+"""norg — opinionated Notion wrapper for a Notion "Freshie" hub.
+
+Plain commands over the existing notion-pp-cli. Builds the verbose Notion JSON,
+maps friendly words to exact option strings, resolves project/bucket names to IDs,
+injects the grey-circle task icon, and prints clean text. Designed so a cheap model
+(Haiku) can read/edit tasks and projects with zero error surface.
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+CLI = os.path.expanduser("~/printing-press/library/notion/notion-pp-cli")
+
+# Default "Freshie" hub data-source IDs. A per-machine clone (set up by the
+# second-brain-notion skill) overrides these via ~/.config/freshie/config.json,
+# so a client's tasks land in THEIR Notion, never the default hub's. Absent file = these.
+TASK_DS = "c0050211-b922-82c1-9bc6-076a4be40378"
+PROJ_DS = "a2050211-b922-830a-8cf0-876a231ef27a"
+BUCKET_DS = "c8550211-b922-8371-84e7-87ce15587470"
+
+_CONFIG = os.path.expanduser("~/.config/freshie/config.json")
+if os.path.exists(_CONFIG):
+    try:
+        with open(_CONFIG, encoding="utf-8") as _f:
+            _cfg = json.load(_f)
+        TASK_DS = _cfg.get("task_ds", TASK_DS)
+        PROJ_DS = _cfg.get("proj_ds", PROJ_DS)
+        BUCKET_DS = _cfg.get("bucket_ds", BUCKET_DS)
+    except (json.JSONDecodeError, OSError) as _e:
+        print(f"norg: ignoring bad {_CONFIG}: {_e}", file=sys.stderr)
+
+ICON = {"type": "icon", "icon": {"color": "gray", "name": "circle-alternate"}}
+CHECK = " "  # task tick-off checkbox property name (literally one space)
+
+URGENCY = {"urgent": "⏰ Urgent", "not-urgent": "Not Urgent", "habit": "Habit"}
+IMPORTANCE = {"important": "⚠️ Important", "not-important": "Not Important", "moved": "Moved the needle"}
+STATE = {"flow": "Flow", "quick": "Quick", "easy": "Easy", "personal": "Personal"}
+WHEN = {"today": "Today", "tomorrow": "Tomorrow", "next-3": "Next 3 Days"}
+STATUS = {"ongoing": "Ongoing", "deadline": "Deadline", "fav": "Fav",
+          "completed": "Completed", "moved": "Moved the Needle", "archived": "Archived"}
+
+
+def die(msg, code=1):
+    print(f"norg: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def run(args, stdin=None):
+    """Call notion-pp-cli, return parsed response with the inner payload unwrapped."""
+    try:
+        p = subprocess.run([CLI] + args, input=stdin, capture_output=True, text=True)
+    except FileNotFoundError:
+        die(f"notion-pp-cli not found at {CLI}")
+    out = (p.stdout or "").strip()
+    try:
+        resp = json.loads(out)
+    except json.JSONDecodeError:
+        msg = (p.stderr or out or "no output").strip()
+        die(msg.splitlines()[0] if msg else "command failed")
+    data = resp.get("data", resp) if isinstance(resp, dict) else resp
+    if isinstance(data, dict) and data.get("object") == "error":
+        die(data.get("message", "Notion API error"))
+    if p.returncode != 0:
+        die((p.stderr or out or "command failed").strip().splitlines()[0])
+    return data
+
+
+def canon(value, mapping, field):
+    v = value.strip().lower().replace(" ", "-")
+    if v in mapping:
+        return mapping[v]
+    for opt in mapping.values():
+        if value.strip().lower() == opt.lower():
+            return opt
+    opts = ", ".join(dict.fromkeys(mapping.values()))
+    die(f"invalid {field} '{value}'. options: {opts}")
+
+
+def query(ds):
+    rows, cursor = [], None
+    while True:
+        args = ["data-sources", "query", "data-source", ds,
+                "--data-source", "live", "--page-size", "100", "--json"]
+        if cursor:
+            args += ["--start-cursor", cursor]
+        data = run(args)
+        rows += data.get("results", [])
+        if data.get("has_more") and data.get("next_cursor"):
+            cursor = data["next_cursor"]
+        else:
+            return rows
+
+
+def title_of(row, prop):
+    arr = row.get("properties", {}).get(prop, {}).get("title") or []
+    return "".join(x.get("plain_text", "") for x in arr).strip()
+
+
+def select_of(row, prop):
+    s = row.get("properties", {}).get(prop, {}).get("select")
+    return s.get("name") if s else None
+
+
+def relation_ids(row, prop):
+    return [r.get("id") for r in row.get("properties", {}).get(prop, {}).get("relation", [])]
+
+
+def checked(row):
+    return bool(row.get("properties", {}).get(CHECK, {}).get("checkbox"))
+
+
+def date_of(row):
+    d = row.get("properties", {}).get("Date", {}).get("date")
+    return d.get("start") if d else None
+
+
+def is_id(s):
+    t = s.replace("-", "")
+    return len(t) == 32 and all(c in "0123456789abcdefABCDEF" for c in t)
+
+
+def resolve(name, ds, title_prop, label):
+    """Resolve a name (or raw id) to a single matching row. Errors on 0 or ambiguous matches."""
+    if is_id(name):
+        for r in query(ds):
+            if r.get("id", "").replace("-", "") == name.replace("-", ""):
+                return r
+        die(f"no {label} with id {name}")
+    rows = query(ds)
+    exact = [r for r in rows if title_of(r, title_prop).lower() == name.lower()]
+    if len(exact) == 1:
+        return exact[0]
+    partial = [r for r in rows if name.lower() in title_of(r, title_prop).lower()]
+    cands = exact or partial
+    if not cands:
+        die(f"no {label} matching '{name}'")
+    if len(cands) > 1:
+        names = "; ".join(title_of(r, title_prop) for r in cands[:8])
+        die(f"'{name}' matches multiple {label}s: {names}")
+    return cands[0]
+
+
+def patch(page_id, body):
+    return run(["pages", "patch", page_id, "--stdin", "--json"], stdin=json.dumps(body))
+
+
+# ── commands ──────────────────────────────────────────────────────────────
+
+def cmd_task_add(a):
+    proj_row = bucket_id = None
+    if a.project:
+        proj_row = resolve(a.project, PROJ_DS, "Name", "project")
+    if a.bucket:
+        bucket_id = resolve(a.bucket, BUCKET_DS, "Name", "bucket").get("id")
+    elif proj_row:
+        ids = relation_ids(proj_row, "My Life Buckets")
+        bucket_id = ids[0] if ids else None
+
+    props = {"Task": {"title": [{"text": {"content": a.title}}]}}
+    if a.urgency:
+        props["Urgency"] = {"select": {"name": canon(a.urgency, URGENCY, "urgency")}}
+    if a.importance:
+        props["Importance"] = {"select": {"name": canon(a.importance, IMPORTANCE, "importance")}}
+    if a.state:
+        props["State"] = {"select": {"name": canon(a.state, STATE, "state")}}
+    if a.when:
+        props["When?"] = {"select": {"name": canon(a.when, WHEN, "when")}}
+    if proj_row:
+        props["Project"] = {"relation": [{"id": proj_row["id"]}]}
+    if bucket_id:
+        props["Bucket"] = {"relation": [{"id": bucket_id}]}
+
+    body = {"parent": {"type": "data_source_id", "data_source_id": TASK_DS},
+            "icon": ICON, "properties": props}
+    if a.notes:
+        body["children"] = [{"object": "block", "type": "paragraph",
+                             "paragraph": {"rich_text": [{"text": {"content": a.notes}}]}}]
+    page = run(["pages", "post", "--stdin", "--json"], stdin=json.dumps(body))
+    if a.json:
+        print(json.dumps(page, indent=2)); return
+    labels = " · ".join(filter(None, [select_of(page, "When?"), select_of(page, "Urgency"), select_of(page, "Importance"), select_of(page, "State")]))
+    where = f" → {title_of(proj_row, 'Name')}" if proj_row else ""
+    print(f"✓ added task '{a.title}'{where}" + (f"  [{labels}]" if labels else ""))
+
+
+def _find_task(ref):
+    if is_id(ref):
+        return resolve(ref, TASK_DS, "Task", "task")
+    return resolve(ref, TASK_DS, "Task", "task")
+
+
+def cmd_task_done(a):
+    row = _find_task(a.ref)
+    patch(row["id"], {"properties": {CHECK: {"checkbox": True}}})
+    print(f"✓ done: {title_of(row, 'Task')}")
+
+
+def cmd_task_reopen(a):
+    row = _find_task(a.ref)
+    patch(row["id"], {"properties": {CHECK: {"checkbox": False}}})
+    print(f"✓ reopened: {title_of(row, 'Task')}")
+
+
+def cmd_task_set(a):
+    row = _find_task(a.ref)
+    props = {}
+    if a.urgency:
+        props["Urgency"] = {"select": {"name": canon(a.urgency, URGENCY, "urgency")}}
+    if a.importance:
+        props["Importance"] = {"select": {"name": canon(a.importance, IMPORTANCE, "importance")}}
+    if a.state:
+        props["State"] = {"select": {"name": canon(a.state, STATE, "state")}}
+    if a.when:
+        props["When?"] = {"select": {"name": canon(a.when, WHEN, "when")}}
+    if not props:
+        die("nothing to set — pass --urgency / --importance / --state / --when")
+    patch(row["id"], {"properties": props})
+    print(f"✓ updated: {title_of(row, 'Task')}")
+
+
+def _fmt_task(row, show_project=True):
+    box = "[x]" if checked(row) else "[ ]"
+    bits = list(filter(None, [select_of(row, "When?"), select_of(row, "Urgency"), select_of(row, "Importance"), select_of(row, "State")]))
+    line = f"{box} {title_of(row, 'Task')}"
+    if bits:
+        line += f"  ({' · '.join(bits)})"
+    return line
+
+
+def cmd_task_show(a):
+    row = _find_task(a.ref)
+    if a.json:
+        print(json.dumps(row, indent=2)); return
+    print(_fmt_task(row))
+    d = date_of(row)
+    if d:
+        print(f"    date: {d}")
+
+
+def cmd_tasks(a):
+    rows = query(TASK_DS)
+    proj_id = resolve(a.project, PROJ_DS, "Name", "project")["id"] if a.project else None
+    when_filter = canon(a.when, WHEN, "when") if a.when else ("Today" if a.today else None)
+    out = []
+    for r in rows:
+        if a.open and checked(r):
+            continue
+        if when_filter and select_of(r, "When?") != when_filter:
+            continue
+        if proj_id and proj_id not in relation_ids(r, "Project"):
+            continue
+        out.append(r)
+    if a.json:
+        print(json.dumps(out, indent=2)); return
+    if not out:
+        print("(no matching tasks)"); return
+    for r in out:
+        print(_fmt_task(r))
+
+
+def cmd_projects(a):
+    rows = query(PROJ_DS)
+    if a.json:
+        print(json.dumps(rows, indent=2)); return
+    for r in rows:
+        st = select_of(r, "Status") or "—"
+        print(f"{title_of(r, 'Name')}  [{st}]")
+
+
+def cmd_project_show(a):
+    proj = resolve(a.name, PROJ_DS, "Name", "project")
+    tasks = [t for t in query(TASK_DS) if proj["id"] in relation_ids(t, "Project")]
+    if a.json:
+        print(json.dumps({"project": proj, "tasks": tasks}, indent=2)); return
+    st = select_of(proj, "Status") or "No status"
+    print(f"Project: {title_of(proj, 'Name')}  [{st}]")
+    if not tasks:
+        print("  (no tasks linked)"); return
+    print(f"  {len(tasks)} task(s):")
+    for t in tasks:
+        print("  " + _fmt_task(t))
+
+
+def cmd_project_status(a):
+    proj = resolve(a.name, PROJ_DS, "Name", "project")
+    val = canon(a.status, STATUS, "status")
+    patch(proj["id"], {"properties": {"Status": {"select": {"name": val}}}})
+    print(f"✓ {title_of(proj, 'Name')} status → {val}")
+
+
+def cmd_project_find(a):
+    rows = query(PROJ_DS)
+    hits = [r for r in rows if a.name.lower() in title_of(r, "Name").lower()]
+    if a.json:
+        print(json.dumps(hits, indent=2)); return
+    for r in hits:
+        print(f"{title_of(r, 'Name')}  [{select_of(r, 'Status') or '—'}]")
+    if not hits:
+        print("(no match)")
+
+
+def cmd_project_create(a):
+    print(
+        "\n"
+        "╔══ STOP — norg cannot create projects ══════════════════════════════════════╗\n"
+        "║                                                                             ║\n"
+        "║  WHY:                                                                       ║\n"
+        "║    The Notion REST API rejects the `template_id` field with HTTP 400:       ║\n"
+        "║    \"body.template_id should be not present\"                                ║\n"
+        "║    A CLI-created project would be a plain, broken page — no                 ║\n"
+        "║    'Project Tasks' linked view. This exact bug produced 5 malformed         ║\n"
+        "║    projects in Andrew's hub on 2026-05-24.                                  ║\n"
+        "║                                                                             ║\n"
+        "║  WHAT TO DO INSTEAD:                                                        ║\n"
+        "║    Create projects ONLY via the `notion-project-skill`, which uses the      ║\n"
+        "║    MCP `notion-create-pages` tool with `template_id` applied correctly.     ║\n"
+        "║                                                                             ║\n"
+        "║    Skill: ~/.claude/skills/notion-project-skill/SKILL.md                   ║\n"
+        "╚═════════════════════════════════════════════════════════════════════════════╝",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+
+def build_parser():
+    p = argparse.ArgumentParser(prog="norg", description="Opinionated Notion CLI for your Notion hub.")
+    p.add_argument("--json", action="store_true", help="raw JSON output")
+    sub = p.add_subparsers(dest="group", required=True)
+
+    task = sub.add_parser("task", help="task operations").add_subparsers(dest="cmd", required=True)
+    t = task.add_parser("add", help="create a task")
+    t.add_argument("title")
+    t.add_argument("--project"); t.add_argument("--bucket")
+    t.add_argument("--importance"); t.add_argument("--urgency"); t.add_argument("--state")
+    t.add_argument("--when", help="today | tomorrow | next-3")
+    t.add_argument("--notes"); t.set_defaults(fn=cmd_task_add)
+    for name, fn in (("done", cmd_task_done), ("reopen", cmd_task_reopen), ("show", cmd_task_show)):
+        sp = task.add_parser(name, help=f"{name} a task"); sp.add_argument("ref"); sp.set_defaults(fn=fn)
+    ts = task.add_parser("set", help="change a task's labels"); ts.add_argument("ref")
+    ts.add_argument("--importance"); ts.add_argument("--urgency"); ts.add_argument("--state")
+    ts.add_argument("--when", help="today | tomorrow | next-3")
+    ts.set_defaults(fn=cmd_task_set)
+
+    tl = sub.add_parser("tasks", help="list tasks")
+    tl.add_argument("--today", action="store_true", help="alias for --when today")
+    tl.add_argument("--when", help="today | tomorrow | next-3")
+    tl.add_argument("--open", action="store_true")
+    tl.add_argument("--project"); tl.set_defaults(fn=cmd_tasks)
+
+    sub.add_parser("projects", help="list projects").set_defaults(fn=cmd_projects)
+
+    proj = sub.add_parser("project", help="project operations").add_subparsers(dest="cmd", required=True)
+    ps = proj.add_parser("show", help="project + its tasks"); ps.add_argument("name"); ps.set_defaults(fn=cmd_project_show)
+    pf = proj.add_parser("find", help="search projects"); pf.add_argument("name"); pf.set_defaults(fn=cmd_project_find)
+    pst = proj.add_parser("status", help="set project status"); pst.add_argument("name"); pst.add_argument("status")
+    pst.set_defaults(fn=cmd_project_status)
+    pc = proj.add_parser("create", help="[DISABLED] use notion-project-skill instead — see norg project create for details")
+    pc.add_argument("--name", help="(ignored — project creation is refused)")
+    pc.add_argument("extra", nargs=argparse.REMAINDER)
+    pc.set_defaults(fn=cmd_project_create)
+    return p
+
+
+def main():
+    p = build_parser()
+    a = p.parse_args()
+    if not hasattr(a, "json"):
+        a.json = False
+    a.fn(a)
+
+
+if __name__ == "__main__":
+    main()

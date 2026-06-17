@@ -1,0 +1,67 @@
+/* Keep — Minimal Capture Mode (PWA only)
+ *
+ * Injected into keep.google.com by the "Keep Minimal Capture" extension.
+ * Wrapped in @media (display-mode: standalone) so it ONLY takes effect
+ * inside the Keep PWA — the regular keep.google.com browser tab is untouched.
+ *
+ * Selector strategy:
+ *   - ARIA roles where Keep exposes them (header[role="banner"], aria-label="Title")
+ *   - Stable IDs (#ognwrapper for Google's top bar)
+ *   - Position-based selectors inside .RfDI4d-bN97Pc for the new-note area;
+ *     these will need re-inspection if Google reshuffles Keep's grid.
+ */
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+
+  /* Black canvas */
+  html, body { background: #000 !important; }
+
+  /* Hide Google top bar (search/account chip) and Keep's app bar */
+  #ognwrapper,
+  header[role="banner"] {
+    display: none !important;
+  }
+
+  /* Hide left sidebar — first child of .notes-container */
+  .notes-container > div:first-child {
+    display: none !important;
+  }
+
+  /* Hide search row in the main content area */
+  .PvRhvb {
+    display: none !important;
+  }
+
+  /* In the notes panel (.RfDI4d-bN97Pc):
+   *   :nth-child(1) trash banner
+   *   :nth-child(2) NEW-NOTE COMPOSE AREA — keep
+   *   :nth-child(3) pinned-notes header
+   *   :nth-child(4) others-notes section
+   *   :nth-child(5) "Dark theme is here" promo
+   *   :nth-child(6) empty / misc
+   */
+  .RfDI4d-bN97Pc > div:nth-child(1),
+  .RfDI4d-bN97Pc > div:nth-child(3),
+  .RfDI4d-bN97Pc > div:nth-child(4),
+  .RfDI4d-bN97Pc > div:nth-child(5),
+  .RfDI4d-bN97Pc > div:nth-child(6) {
+    display: none !important;
+  }
+
+  /* Center + dark-style the new-note compose card */
+  .RfDI4d-bN97Pc > div:nth-child(2) {
+    background: #1a1a1a !important;
+    color: #fff !important;
+    margin: 15vh auto !important;
+    max-width: 640px !important;
+    border-radius: 12px !important;
+    padding: 8px !important;
+  }
+
+  /* Force readable text inside the note card */
+  .RfDI4d-bN97Pc > div:nth-child(2) [contenteditable],
+  .RfDI4d-bN97Pc > div:nth-child(2) [aria-label="Title"] {
+    color: #fff !important;
+    background: transparent !important;
+  }
+}

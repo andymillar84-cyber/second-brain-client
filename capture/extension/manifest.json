@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Keep Minimal Capture",
+  "version": "1.0.0",
+  "description": "Strips Google Keep down to a minimal dark new-note card — inside the Keep PWA only.",
+  "content_scripts": [
+    {
+      "matches": ["https://keep.google.com/*"],
+      "css": ["capture.css"],
+      "run_at": "document_start"
+    }
+  ]
+}
