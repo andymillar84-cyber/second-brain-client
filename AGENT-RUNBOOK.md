@@ -113,9 +113,10 @@ fresh post-restart session that reads RUN-LOG and carries on.
 ## Segment A — Foundation  *(no skills needed yet)*
 1. `whoami` → confirm it's the throwaway account, **not `andrewmillar`**. `mkdir -p /Users/Shared/sb-test-logs`. Log.
 2. Install supporting software per **README §1**; verify each with `which`. Log each (note any already present).
-3. Copy the system per **README §2** exactly; verify `which keep norg notion-pp-cli` all resolve. Log.
-4. **Hand-off:** write a RUN-LOG line, then tell Andrew:
-   *"Add the Notion MCP connector in Claude Code, restart it, then paste Kickoff B."* **STOP.**
+3. Copy the system per **README §2** exactly; verify `which keep norg notion-pp-cli` all resolve. Log. *(This also copies the `process-interviewer` skill — a hard dependency the Keep/Notion skills call. No separate step.)*
+4. **Install the superpowers plugin** — gives the agent `systematic-debugging` + auto-primes skill use for the rest of the install: `claude plugin install superpowers@claude-plugins-official`. If it can't find the marketplace, tell Andrew to run **`/plugin`** in Claude Code and install **superpowers** from the official list. Log. *(Loads on the restart below — not before.)*
+5. **Hand-off:** write a RUN-LOG line, then tell Andrew:
+   *"Add the Notion MCP connector in Claude Code, restart it, then paste Kickoff B."* **STOP.** *(The restart loads the copied skills **and** the superpowers plugin together.)*
 
 ## Segment B — Keep  *(post-restart)*
 1. Read RUN-LOG. Confirm the skills are now visible (a `/second-brain-keep` skill exists). If not → debug doc, stop.

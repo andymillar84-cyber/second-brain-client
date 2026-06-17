@@ -66,8 +66,8 @@ then start the next session. The agent reads/writes `RUN-LOG.md` to carry state 
 > and do **Segment A only**. Stop at the end and tell me the hand-off action.
 > *(Public repo — the clone needs no login.)*
 
-**Agent does:** installs Homebrew/python/uv/hammerspoon/Edge, copies skills + `norg` + `notion-pp-cli` into place.
-**You do at the stop:** **add the Notion MCP connector** in Claude Code, then **restart Claude Code**.
+**Agent does:** installs Homebrew/python/uv/hammerspoon/Edge, copies the skills (incl. **`process-interviewer`**, a dependency) + `norg` + `notion-pp-cli`, and **installs the superpowers plugin** (`systematic-debugging` + skill auto-priming).
+**You do at the stop:** **add the Notion MCP connector** in Claude Code, then **restart Claude Code** — this loads the skills **and** superpowers together. *(If the agent couldn't install superpowers via CLI, run `/plugin` → install **superpowers** yourself here.)*
 **Watch for:** nothing auth-related — the repo's public, so the clone just works.
 
 ### ▶ Segment B — Keep *(post-restart)*

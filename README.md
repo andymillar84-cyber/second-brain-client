@@ -42,8 +42,9 @@ chmod +x ~/.local/bin/norg ~/printing-press/library/notion/notion-pp-cli
 grep -q '.local/bin' ~/.zshrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 ```
 
-Then: add the **Notion MCP connector** in Claude Code, and **restart Claude Code** so it loads the
-7 new skills.
+Then: install the **superpowers** plugin (`claude plugin install superpowers@claude-plugins-official`, or
+via `/plugin`), add the **Notion MCP connector**, and **restart Claude Code** so it loads the 7 skills +
+superpowers. (`process-interviewer` is among the 7 skills — a dependency the Keep/Notion skills call.)
 
 ## 3. Run the skills, in order
 
