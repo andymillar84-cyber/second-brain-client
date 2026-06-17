@@ -41,7 +41,7 @@ Do all of this *before* you switch users. Once you're in the throwaway account y
 - [ ] **macOS:** create the throwaway user account (System Settings → Users & Groups). Note its username (must **not** be `andrewmillar`).
 - [ ] **Google:** create a throwaway Google account (this is the Keep half).
 - [ ] **Notion:** create a throwaway Notion account (free).
-- [ ] **Claude:** have a Claude login ready for Claude Code in the throwaway account (a throwaway paid login — fresh = no skills/MCP/memory, which is exactly what we're testing).
+- [ ] **Claude Code:** it's **per-user — it does NOT carry over** to the throwaway account (yours lives at `~/.local/bin/claude`). In a Terminal *in the throwaway account*, install it: `curl -fsSL https://claude.ai/install.sh | bash` (native, same as yours) — or `npm install -g @anthropic-ai/claude-code`. Then open a fresh terminal, run `claude`, and sign in (your own login is fine — the empty `~/.claude` already gives the vanilla skill environment). Confirm with `which claude`. *(Fresh = no skills/MCP/memory, which is exactly what we're testing.)*
 - [ ] **🔑 Publish your Notion template → get the public Duplicate URL.** This is the easy-to-miss one. In *your* Notion, open the second-brain template page → **Share → Publish → Copy link**. That public link has a **Duplicate** button the agent will hand the throwaway account in Segment C. **Paste the URL here so you have it on your phone:**
   - `PUBLIC TEMPLATE URL → ______________________________________`
 - [x] **Repo is pushed & current** — confirmed (`main` in sync with origin, latest = guardrail flip). Nothing to do.
