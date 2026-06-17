@@ -6,6 +6,10 @@ Andrew's Keep → Notion "second brain", packaged to **replicate onto a client's
 the skills do the live setup (Keep auth, label creation, Notion config, launchd). This README is
 the reference card; the work is the skills.
 
+> 🤖 **Agent running a (test) install: read [`AGENT-RUNBOOK.md`](AGENT-RUNBOOK.md) FIRST.** It has the
+> ordered phases, the DO/DO-NOT guardrails, the restart handoff, and the recording protocol
+> (run-log + debug docs to `/Users/Shared/sb-test-logs/`). This README is the reference it points to.
+
 ---
 
 ## 1. Supporting software (install first)
