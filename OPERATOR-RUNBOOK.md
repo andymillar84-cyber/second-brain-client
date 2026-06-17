@@ -60,15 +60,15 @@ then start the next session. The agent reads/writes `RUN-LOG.md` to carry state 
 
 ### ▶ Segment A — Foundation *(start here; this one clones the repo)*
 **You paste:**
-> You're helping with a test install. Clone the private system repo, then follow its runbook:
+> You're helping with a test install. Clone the public system repo, then follow its runbook:
 > `git clone https://github.com/andymillar84-cyber/second-brain-client.git ~/second-brain-client`
 > Then read `~/second-brain-client/AGENT-RUNBOOK.md`, follow its Golden Rules + Recording protocol,
 > and do **Segment A only**. Stop at the end and tell me the hand-off action.
-> *(If the clone fails with auth, tell me — I need to `gh auth login` first.)*
+> *(Public repo — the clone needs no login.)*
 
 **Agent does:** installs Homebrew/python/uv/hammerspoon/Edge, copies skills + `norg` + `notion-pp-cli` into place.
 **You do at the stop:** **add the Notion MCP connector** in Claude Code, then **restart Claude Code**.
-**Watch for:** clone auth failure → you may need `gh auth login` first.
+**Watch for:** nothing auth-related — the repo's public, so the clone just works.
 
 ### ▶ Segment B — Keep *(post-restart)*
 **You paste:**

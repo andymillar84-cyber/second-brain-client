@@ -19,11 +19,11 @@ Run each in a **new Claude Code session** in the throwaway account. Wait for one
 hand-off action before starting the next.
 
 **A — Foundation** *(start here — this one clones the repo):*
-> You're helping with a test install. Clone the private system repo, then follow its runbook:
+> You're helping with a test install. Clone the public system repo, then follow its runbook:
 > `git clone https://github.com/andymillar84-cyber/second-brain-client.git ~/second-brain-client`
 > Then read `~/second-brain-client/AGENT-RUNBOOK.md`, follow its Golden Rules + Recording protocol,
 > and do **Segment A only**. Stop at the end and tell me the hand-off action.
-> *(If the clone fails with auth, tell me — I need to `gh auth login` first.)*
+> *(Public repo — the clone needs no login.)*
 
 **B — Keep:**
 > Test install, Segment B. First read `/Users/Shared/sb-test-logs/RUN-LOG.md` for state, then in
