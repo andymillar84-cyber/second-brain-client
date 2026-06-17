@@ -18,9 +18,12 @@ breakages is the point. Don't paper over them.
 Run each in a **new Claude Code session** in the throwaway account. Wait for one to finish and do its
 hand-off action before starting the next.
 
-**A — Foundation:**
-> Test install, Segment A. Read `~/second-brain-client/AGENT-RUNBOOK.md`, follow the Golden Rules +
-> Recording protocol, and do **Segment A only**. Stop at the end and tell me the hand-off action.
+**A — Foundation** *(start here — this one clones the repo):*
+> You're helping with a test install. Clone the private system repo, then follow its runbook:
+> `git clone https://github.com/andymillar84-cyber/second-brain-client.git ~/second-brain-client`
+> Then read `~/second-brain-client/AGENT-RUNBOOK.md`, follow its Golden Rules + Recording protocol,
+> and do **Segment A only**. Stop at the end and tell me the hand-off action.
+> *(If the clone fails with auth, tell me — I need to `gh auth login` first.)*
 
 **B — Keep:**
 > Test install, Segment B. First read `/Users/Shared/sb-test-logs/RUN-LOG.md` for state, then in
@@ -42,13 +45,24 @@ hand-off action before starting the next.
 
 ## Golden Rules
 
-**DO** — follow your segment's steps in order · run terminal commands yourself & show Andrew · use
-ONLY the throwaway accounts · on failure, STOP + write a debug doc + tell Andrew.
+You are a **capable local agent.** Most of this install is mechanical — **adapt and self-heal it
+yourself.** Only stop for the few things you genuinely can't or shouldn't decide.
 
-**DO NOT** — ❌ improvise / "improve" / install anything not named here · ❌ retry a failing step more
-than once (retries hide the cause) · ❌ guess at missing pieces (a missing file/command = a FINDING,
-log it) · ❌ touch the main account or any `/Users/andrewmillar/` path · ❌ `git push` or edit this repo
-· ❌ run any segment other than the one you were told to.
+**🔧 SELF-HEAL these yourself (don't stop, don't ask, just fix + log one line):**
+- `command not found` / PATH not live → `export PATH="$HOME/.local/bin:$PATH"`, or call the binary by full path.
+- a write fails because a directory is missing → `mkdir -p` it and retry.
+- a path / arch / env mismatch → read the error, fix it locally, carry on.
+- a small obvious snag the error message explains → fix it. Note what you did in the RUN-LOG, keep moving.
+
+**🛑 STOP and ask Andrew — ONLY for these:**
+- 🔑 **Credentials / secrets** — Google master token, Notion token, any account login.
+- 🖱️ **GUI / consent steps** — Hammerspoon Accessibility, install the Keep PWA, "Load unpacked" extension, add the Notion connector.
+- 🚫 **Andrew's real accounts** or any `/Users/andrewmillar/` path — never touch them.
+- 🛡️ **THE ISOLATION GATE** — if `~/.config/freshie/config.json` is missing/empty, `norg` silently writes to **ANDREW's** Notion. **Never adapt around this.** Confirm the config points at the CLIENT before any Notion write.
+- 💥 Anything **destructive or irreversible**.
+
+**Always:** run terminal commands yourself & show Andrew · use ONLY the throwaway accounts · don't
+`git push` or edit this repo · do only your assigned segment.
 
 ---
 
@@ -64,8 +78,24 @@ Logs go to **`/Users/Shared/sb-test-logs/`** — both macOS accounts read it, so
    - evidence: <key output line / file created / exact error>
    - next: <what's next>
    ```
-3. **On failure → `debug-<short-issue>.md`**: **Known Facts** (w/ evidence) · **Ruled Out** ·
-   **Current Hypothesis** · **Evidence Needed**. Then STOP and tell Andrew.
+3. **On a genuine blocker** (something in the 🛑 STOP list, or a failure you couldn't self-heal)
+   **→ `debug-<short-issue>.md`**: **Known Facts** (w/ evidence) · **Ruled Out** · **Current
+   Hypothesis** · **Evidence Needed**. Then STOP and tell Andrew. *(Mechanical snags you fixed
+   yourself don't need a debug doc — just a RUN-LOG line.)*
+
+---
+
+## ⚠️ Known gotchas — recognise these, DON'T rabbit-hole
+
+- **`keep inbox` fails right after you write the token?** Almost always the **email**, not the token —
+  so do NOT assume "flaky token extraction" and redo the auth on a loop. `keep` reads BOTH the master
+  token AND the Google email from the **keep-mcp env block in `~/.claude.json`** (mcpServers → keep-mcp
+  → env): put `GOOGLE_MASTER_TOKEN` + `GOOGLE_EMAIL` *together* there. The token file alone leaves the email empty.
+- **`notion-pp-cli` is NOT on PATH — intentional.** `norg` calls it by absolute path
+  `~/printing-press/library/notion/notion-pp-cli`. Don't `which` it; just confirm that file exists + is executable.
+- **The hourly auto-labeller shells `claude -p`** — must work HEADLESS (from launchd). If its first run
+  logs a claude error, that's a real FINDING (note it) — the rest of the system still works without the hourly layer.
+- **Isolation is sacred** — `config.json` absent ⇒ writes hit **Andrew's** Notion. Verify it, never adapt around it.
 
 ---
 
