@@ -20,7 +20,11 @@ Second of three: second-brain-keep → **second-brain-notion** → second-brain-
 3. Add the **Notion MCP connector** to the client's Claude Code — `notion-project-skill` needs it for template-applied project creation.
 
 ## Phase 2 — Duplicate the template (~3 min)
-1. Client opens the **public Notion template URL** (from the handover) → **Duplicate** into their workspace.
+1. Open the **public Notion template** below in the client's browser (signed into **their** Notion) → click **Duplicate** (top-right) → choose their workspace:
+
+   **https://paint-dugong-696.notion.site/Second-Brain-OS-Template-38250211b922815e9ef1e9582e8f5983**
+
+   This URL is baked into the repo — it's the canonical handover link, nothing to carry over separately.
 2. ⚠️ The New-Project template's inline "Project Tasks" **linked views** may not survive cross-workspace duplication. After duplicating, open a project and confirm the linked view still filters. If broken, recreate the linked view in the duplicated template (or script the DBs via the API).
 
 ## Phase 3 — Confirm buckets (~3 min)

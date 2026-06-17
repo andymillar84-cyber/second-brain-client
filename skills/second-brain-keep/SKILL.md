@@ -17,7 +17,7 @@ notion task · today · tomorrow · next 3 days · notion new project idea · no
 ```
 
 ## Handover folder (Andrew brings to the client's Mac)
-Copy over (USB / git / AirDrop): `keep_cli.py`, `norg`, `notion-pp-cli` (Mac binary — check arch), `exchange_token.py`, the flow skills (`keep-organizer`, `keep-router`, `notion-project-skill`), the three `second-brain-*` skills, and the **public Notion template URL** (used in step 2). Sources on Andrew's machine: `keep`→`~/.claude/skills/keep-organizer/scripts/keep_cli.py`; `norg`→`~/.local/bin/norg`; `notion-pp-cli`→`~/printing-press/library/notion/notion-pp-cli`; `exchange_token.py`→`active/keep-organizer/`.
+Copy over (USB / git / AirDrop): `keep_cli.py`, `norg`, `notion-pp-cli` (Mac binary — check arch), `exchange_token.py`, the flow skills (`keep-organizer`, `keep-router`, `notion-project-skill`), and the three `second-brain-*` skills. (The public Notion template URL is baked into `second-brain-notion` Phase 2 — nothing to carry over.) Sources on Andrew's machine: `keep`→`~/.claude/skills/keep-organizer/scripts/keep_cli.py`; `norg`→`~/.local/bin/norg`; `notion-pp-cli`→`~/printing-press/library/notion/notion-pp-cli`; `exchange_token.py`→`active/keep-organizer/`.
 
 ---
 
