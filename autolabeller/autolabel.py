@@ -7,6 +7,10 @@ the chosen topic + routing labels. It NEVER archives and NEVER creates new label
 the downstream keep-organizer / keep-router flow is untouched — it just finds notes
 already labelled and ready to route.
 
+If a run fails (e.g. an expired Keep master token or Claude login) it posts a macOS
+notification ONCE, so a silent stall surfaces instead of only landing in the log; it
+goes quiet while the failure persists and pings again once it recovers.
+
 Run by launchd hourly; also runnable by hand:
     python3 autolabel.py            # live
     python3 autolabel.py --dry-run  # classify + log, apply nothing
@@ -27,6 +31,7 @@ LEARNINGS = HOME / ".claude" / "skills" / "keep-organizer" / "learnings.md"
 STATE_DIR = HOME / ".config" / "keep-autolabel"
 PROCESSED = STATE_DIR / "processed.json"
 LOG = STATE_DIR / "log.jsonl"
+FAIL_FLAG = STATE_DIR / ".failing"  # present while the job is in a failed state (dedupes notifications)
 
 ROUTING_LABELS = {
     "notion task", "today", "tomorrow", "next 3 days",
@@ -138,6 +143,36 @@ def daily_log(line):
         f.write(line + "\n")
 
 
+def notify(title, message):
+    """Best-effort macOS notification. This is a LaunchAgent so it runs in the user's
+    GUI session and Notification Center is reachable. Never let a notification failure
+    crash the actual labelling run."""
+    try:
+        subprocess.run(
+            ["/usr/bin/osascript", "-e", "display notification {} with title {}".format(
+                json.dumps(message, ensure_ascii=False), json.dumps(title, ensure_ascii=False))],
+            capture_output=True, env=env_with_path(), timeout=10,
+        )
+    except Exception:
+        pass
+
+
+def mark_failing(stage, detail):
+    """Ping the user ONCE when a run goes healthy→failing (e.g. an expired Keep or Claude
+    token), then stay quiet while it keeps failing so it doesn't nag every hour."""
+    if not FAIL_FLAG.exists():
+        notify("Keep auto-labeller stopped",
+               "{} error — new notes won't auto-label until it's fixed.".format(stage))
+    FAIL_FLAG.write_text("{}: {}".format(stage, detail)[:500], encoding="utf-8")
+
+
+def mark_ok():
+    """On a healthy run, clear the failure flag and ping once if it had been failing."""
+    if FAIL_FLAG.exists():
+        FAIL_FLAG.unlink()
+        notify("Keep auto-labeller recovered", "Auto-labelling is working again.")
+
+
 def main():
     dry = "--dry-run" in sys.argv
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -162,6 +197,7 @@ def main():
             # Don't silently reset to empty — that would re-mutate every note.
             log_line({"ts": ts, "event": "error", "stage": "state", "detail": str(e)})
             print("ERROR: processed.json is unreadable — refusing to run (would reset history):", e)
+            mark_failing("state", str(e))
             return 1
 
     try:
@@ -170,6 +206,7 @@ def main():
     except RuntimeError as e:
         log_line({"ts": ts, "event": "error", "stage": "keep", "detail": str(e)})
         print("ERROR (keep):", e)
+        mark_failing("Keep", str(e))
         return 1
 
     name_to_id = {l["name"]: l["id"] for l in labels}
@@ -187,6 +224,7 @@ def main():
     if not candidates:
         log_line({"ts": ts, "event": "poll", "new": 0})
         print("[{}] no new notes to label".format(ts))
+        mark_ok()  # Keep was reachable → the job is healthy
         return 0
 
     try:
@@ -194,6 +232,7 @@ def main():
     except RuntimeError as e:
         log_line({"ts": ts, "event": "error", "stage": "profiles", "detail": str(e)})
         print("ERROR (profiles):", e)
+        mark_failing("Keep", str(e))
         return 1
     learnings = LEARNINGS.read_text(encoding="utf-8") if LEARNINGS.exists() else ""
 
@@ -208,6 +247,7 @@ def main():
     except (RuntimeError, subprocess.TimeoutExpired) as e:
         log_line({"ts": ts, "event": "error", "stage": "classify", "detail": str(e)})
         print("ERROR (classify):", e)
+        mark_failing("Claude", str(e))
         return 1  # leave candidates unprocessed → retried next poll
 
     applied = 0
@@ -254,6 +294,7 @@ def main():
 
     print("[{}]{} labelled {}/{} new note(s)".format(
         ts, " [DRY]" if dry else "", applied, len(candidates)))
+    mark_ok()  # a full classify+apply cycle ran → the job is healthy
     return 0
 
 
