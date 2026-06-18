@@ -96,14 +96,14 @@ Two passes:
 2. **Routing labels** — one question per note, single-select, options: the 6 routing labels + `none (skip routing)`. Pre-select `routing_suggested`. Batch up to 4 notes per call. Skip notes marked for trash in pass 1.
 
 ### 4b. Review — big inbox (>5): HTML preview pane
-1. Build input JSON: `{ "labels":[all label names], "projects":[Notion project names], "notes":[{id,title,text(full),current:[names],suggested,alts:[1-2],uncertain,routing_suggested}] }`. `routing_suggested` = one of the 6 routing label names or `null`. `projects` = the project-name list from `norg --json projects` (used to populate the per-note project picker shown for `notion task` routes); pull each name from its `properties` title field, or just run `norg projects` and take the name before the trailing `  [State]`. Write to `/tmp/keep_review_input.json`.
+1. Build input JSON: `{ "labels":[all label names], "projects":[Notion project names], "notes":[{id,title,text(full),current:[names],suggested,alts:[1-2],uncertain,routing_suggested}] }`. `routing_suggested` = one of the 6 routing label names or `null`. `projects` = the project-name list resolved via the Notion MCP (`notion-search`/`notion-fetch` on the My Projects data source — same resolution `keep-router` uses), to populate the per-note project picker shown for `notion task` routes. Write to `/tmp/keep_review_input.json`.
 2. Render: `python3 ~/.claude/skills/keep-organizer/scripts/keep_review_page.py /tmp/keep_review_input.json` (writes `review/index.html`).
 3. Ensure the current project's `.claude/launch.json` has the **keep-review** entry (create/merge if missing):
    `{"name":"keep-review","runtimeExecutable":"python3","runtimeArgs":["-m","http.server","8766","--directory","~/.claude/skills/keep-organizer/review"],"port":8766}`
 4. `preview_start("keep-review")` → serverId. `preview_screenshot` to confirm it rendered.
 5. Tell the user: "Review in the side pane (scroll the whole list), then say **done**." Wait.
 6. On "done": `preview_eval(serverId, "JSON.stringify(window.getReview())")` →
-   `{ decisions:[{id,title,suggested,action,labels,instruction,why,routing_label,route_notes,route_project}], batch }`. `action` ∈ `label|trash|instruct|skip`. `routing_label` = one of the 6 routing label names or `null`. `why` = reason the user typed when he overrode the topic label suggestion. **`route_notes`** = free-text detail the user voice-dumped for a Notion-bound note (any `notion …` route) — `null` otherwise; becomes `norg task add --notes "<route_notes>"` at routing time. **`route_project`** = Notion project name the user assigned (only ever set for the `notion task` route, chosen from the `projects` picker) — `null` otherwise; becomes `norg task add --project "<route_project>"`.
+   `{ decisions:[{id,title,suggested,action,labels,instruction,why,routing_label,route_notes,route_project}], batch }`. `action` ∈ `label|trash|instruct|skip`. `routing_label` = one of the 6 routing label names or `null`. `why` = reason the user typed when he overrode the topic label suggestion. **`route_notes`** = free-text detail the user voice-dumped for a Notion-bound note (any `notion …` route) — `null` otherwise; becomes the task/project body in `keep-router` at routing time. **`route_project`** = Notion project name the user assigned (only ever set for the `notion task` route, chosen from the `projects` picker) — `null` otherwise; becomes the task's `Project` relation in `keep-router`.
 7. `preview_stop(serverId)` once decisions are captured.
 
 ### 5–6. Resolve + summarise
@@ -112,7 +112,7 @@ Per decision: `label` → add `labels` + `routing_label` (skip ones already on t
 ### 7. Execute (keep CLI)
 1. New labels: `keep create-label "<name>"` → capture id.
 2. `keep add-label <note_id> <label_id>` per note→topic label (skip if already present).
-3. **Routing label:** if `routing_label` is non-null, look up the routing label id from `keep labels` and `keep add-label <note_id> <routing_label_id>` (skip if already present). The actual Notion write happens later in **keep-router** (or the chained end-of-day flow). If you proceed straight into routing in the same session, carry `route_notes` → `norg task add --notes "<route_notes>"` and `route_project` → `norg task add --project "<route_project>"` for each Notion-bound note. Otherwise `route_notes`/`route_project` are non-persistent (they live in this session's decisions only) — run routing in the same pass to use them.
+3. **Routing label:** if `routing_label` is non-null, look up the routing label id from `keep labels` and `keep add-label <note_id> <routing_label_id>` (skip if already present). The actual Notion write happens later in **keep-router** (or the chained end-of-day flow). If you proceed straight into routing in the same session, carry `route_notes` → the task/project body and `route_project` → the task's `Project` relation (both applied by `keep-router` via the Notion MCP) for each Notion-bound note. Otherwise `route_notes`/`route_project` are non-persistent (they live in this session's decisions only) — run routing in the same pass to use them.
 4. `keep archive <note_id>...` for every labelled note (batch).
 5. `keep trash <note_id>...` for delete-marked notes (batch).
 6. **Learnings:** for each decision where `action=label` AND the chosen topic labels don't include `suggested` (an override) AND `why` is non-empty, append an entry to `~/.claude/skills/keep-organizer/learnings.md`:
@@ -123,7 +123,9 @@ Per decision: `label` → add `labels` + `routing_label` (skip ones already on t
 "Filed N (label → count), created M labels, trashed K, skipped S. Routing labels applied to R notes. Inbox now has X." Re-runnable anytime.
 
 ## Token refresh (~when expired/revoked)
-Same as the `google-keep` skill: open `accounts.google.com/EmbeddedSetup`, copy the `oauth_token` cookie, then:
+The `oauth_token` cookie is **single-use and expires in ~1–2 min**, so **stage the command below first** (email filled in), **then** grab a **fresh** cookie and run within seconds. If it denies, the cookie's spent — reload `EmbeddedSetup` for a new one rather than retrying the same value.
+
+Open `accounts.google.com/EmbeddedSetup`, copy the full `oauth_token` cookie, then:
 ```bash
 GKEEP_EMAIL="<client@email>" GKEEP_OAUTH_TOKEN="oauth2_4/..." \
 uv run --no-project --with gpsoauth python3 -c '
@@ -131,7 +133,7 @@ import os,gpsoauth
 r=gpsoauth.exchange_token(os.environ["GKEEP_EMAIL"],os.environ["GKEEP_OAUTH_TOKEN"],"0123456789abcdef")
 print(r.get("Token") or r)'
 ```
-Write the `aas_et/…` token to `~/.config/keep-cli/token` (or update keep-mcp's env in `~/.claude.json`). The CLI reads it fresh each call.
+Write the `aas_et/…` token to `~/.config/keep-cli/token` (or update keep-mcp's env in `~/.claude.json` — keep `GKEEP_EMAIL` set there too). The CLI reads it fresh each call.
 
 ## Edge cases
 - Empty inbox → say so, stop.

@@ -1,6 +1,6 @@
 ---
 name: keep-router
-description: Route labeled Google Keep notes into Notion. Use when the user says "route my notes", "process my labeled notes", "move my notes to Notion", or /keep-router. Finds archived notes with routing labels (notion task, notion new project idea, notion add to project, today, tomorrow, next 3 days), proposes placements via HTML preview pane, and executes on confirmation. Uses the bundled `keep` CLI and `norg` CLI for Notion.
+description: Route labeled Google Keep notes into Notion. Use when the user says "route my notes", "process my labeled notes", "move my notes to Notion", or /keep-router. Finds archived notes with routing labels (notion task, notion new project idea, notion add to project, today, tomorrow, next 3 days), proposes placements via HTML preview pane, and executes on confirmation. Uses the bundled `keep` CLI for Keep and the connected Notion MCP for all Notion writes.
 ---
 
 # Keep Router
@@ -10,7 +10,7 @@ Routes archived Google Keep notes that carry routing labels into Notion. the use
 ## Prerequisites
 
 - `keep` CLI working (same as keep-organizer)
-- `norg` CLI at `~/.local/bin/norg` (Notion wrapper)
+- The **Notion MCP** connector added to this Claude Code, signed into the user's own Notion workspace (set up in `second-brain-notion`)
 - Routing labels exist in Keep (created by keep-organizer or manually)
 
 ## The `keep` CLI
@@ -26,29 +26,26 @@ keep remove-label <note_id> <label_id>  Strip a label from a note
 keep archive <note_id>...       Archive note(s)
 ```
 
-## The `norg` CLI
+## Notion via the MCP (no CLI)
 
-Notion wrapper at `~/.local/bin/norg`. Key commands used by this skill:
+All Notion reads and writes go through the **connected Notion MCP**. There is no `norg`/`notion-pp-cli` and no `config.json` — the MCP is OAuth-scoped to the user's workspace, so writes can only land there. Resolve everything by name at the start of the run and cache it for the session:
 
-```
-norg task add "<title>" [--notes "body text"] [--project "Project Name"] [--when today|tomorrow|next-3]
-norg tasks [--json]
-norg projects [--json]
-norg project show "<name>"
-norg project find "<query>"
-```
+- **My Task List** + **My Projects** data sources — `notion-search` each name (`query_type: "internal"`), take the `database` hit, keep the id (used as `data_source_id` / `collection://<id>`). *(See `notion-project-skill` for the same resolution pattern.)*
+- **Project list (name → page url)** — `notion-search`/`notion-fetch` the My Projects data source; cache the project names + page URLs to infer destinations and to populate the review pane's project picker.
 
-**norg cannot** create project pages or append content to existing projects. For those operations, use `notion-pp-cli` (see below).
+MCP tools this skill uses: `notion-search`, `notion-fetch`, `notion-create-pages`, `notion-update-page`. Adding a task = `notion-create-pages` into the My Task List data source (properties below). Appending to a project = `notion-update-page` with `command: "insert_content"`.
 
-## Notion writes via `notion-pp-cli` (gap-filler)
+### Task properties (My Task List)
 
-For operations norg can't do, use **`notion-pp-cli`** (`~/printing-press/library/notion/notion-pp-cli`) — the same Notion integration norg authenticates with (configured per-machine via its `config.toml`). **Do not** use the Notion MCP connector for these writes: that connector has a known account-mismatch and may land in a stale/wrong workspace. Add `--agent` for JSON, non-interactive output.
+When creating a task row, set:
+- **`Task`** (title) — the note title / first line.
+- **`When?`** (select) — `Today` / `Tomorrow` / `Next 3 Days`, only for a timing label; omit for plain `notion task`.
+- **`Project`** (relation) — JSON-array string of the project page URL, when a project is assigned.
+- **`Bucket`** (relation) — match the project's bucket if a project is set; otherwise omit.
+- **icon** — the grey circle `icons/circle-alternate_gray`.
+- **notes body** — note body (+ any `route_notes`) go in the page `content`, not a property.
 
-- **`notion-pp-cli pages post --stdin`** — create a new project page under the Projects database (for `notion new project idea`). Body sets `parent` = `{"database_id":"<Projects DB id>"}` plus the title property; pass the full JSON body on stdin.
-- **`notion-pp-cli blocks children patch-block <page_id> --stdin`** — append content blocks to an existing project (for `notion add to project`).
-- **`notion-pp-cli notion-search "<query>"`** — fallback for finding pages/databases by name.
-
-**Discovering IDs:** Run `norg --json projects` at the start. The output contains each project's `id` (page ID) and `parent.database_id` (Projects database ID). Cache both the database ID and the project name→page_id map for the session.
+(Importance / Urgency / State are left blank here — routed tasks are quick captures; the user triages them later. `notion-project-skill` sets those when building a full project.)
 
 ## Routing Labels
 
@@ -89,7 +86,7 @@ For each labeled note:
 
 **`notion new project idea`** — Propose as a new project page. Title from note, body content as project description.
 
-**`notion add to project`** — Infer which existing project by matching note content against `norg projects`. Flag with ⚠️ if ambiguous and ask the user during confirmation.
+**`notion add to project`** — Infer which existing project by matching note content against the cached project list (from `notion-search`/`notion-fetch` on My Projects). Flag with ⚠️ if ambiguous and ask the user during confirmation.
 
 **Present proposals** via HTML review pane:
 1. Build input JSON for the router review page (see Review Page below)
@@ -101,16 +98,16 @@ For each labeled note:
 6. On "done": `preview_eval(serverId, "JSON.stringify(window.getReview())")` → decisions
 7. `preview_stop(serverId)`
 
-### 3. Execute confirmed writes
+### 3. Execute confirmed writes (Notion MCP)
 
-- `notion task`: `norg task add "<title>" [--notes "<body>"] [--project "<project>"]`
-- `today` / `tomorrow` / `next 3 days`: `norg task add "<title>" [--notes "<body>"] [--project "<project>"] --when <today|tomorrow|next-3>`
-- `notion new project idea`: `notion-pp-cli pages post --stdin` — create under the Projects database (parent = `{"database_id":"<Projects DB id>"}`)
-- `notion add to project`: `notion-pp-cli blocks children patch-block <page_id> --stdin` — append a content block to the matched project page
+- **`notion task`** — `notion-create-pages` into the My Task List data source. `Task` = title; note body (+ `route_notes`) → page `content`; `Project` relation if assigned; grey-circle icon. No `When?`.
+- **`today` / `tomorrow` / `next 3 days`** — same `notion-create-pages` call, plus `"When?": "Today" | "Tomorrow" | "Next 3 Days"` (exact strings) set from the timing label.
+- **`notion new project idea`** — create the project **via the `notion-project-skill` recipe** (`notion-create-pages` with the discovered `template_id` into the My Projects data source), so the "Project Tasks" linked view renders. Don't hand-roll a templateless page. Use the note title as the project name and the body/`route_notes` as the outcome.
+- **`notion add to project`** — `notion-update-page` with `command: "insert_content"` on the matched project page, appending the note body (+ `route_notes`) as a paragraph block.
 
-**Inline context from the keep-organizer review** (`route_notes` / `route_project`): when a decision carries these fields — voice-dumped by the user in the keep-organizer review pane and handed off via the chained end-of-day flow — fold them into the call:
-- **`route_notes`** → the `--notes` body. Append it to the original note body (`--notes "<note body>\n\n<route_notes>"`), or use it alone as the body if there's no useful original text. Applies to all `notion …` routes; for `notion new project idea` / `notion add to project` it becomes the project description / appended block content.
-- **`route_project`** → `--project "<route_project>"` (only ever set for `notion task`). Takes precedence over any project inferred here; if both are absent, omit `--project`.
+**Inline context from the keep-organizer review** (`route_notes` / `route_project`): when a decision carries these fields — voice-dumped by the user in the keep-organizer review pane and handed off via the chained end-of-day flow — fold them in:
+- **`route_notes`** → the task/project body. Append it to the original note body (`<note body>\n\n<route_notes>`), or use it alone if there's no useful original text. Applies to all `notion …` routes; for `notion new project idea` / `notion add to project` it becomes the project outcome / appended block content.
+- **`route_project`** → the `Project` relation (only ever set for `notion task`). Takes precedence over any project inferred here; if both are absent, omit the relation.
 
 ### 4. Cleanup
 

@@ -5,19 +5,19 @@ description: Step 3 of 3 — smoke-test a freshly cloned Keep→Notion "second b
 
 # Second Brain — Verify (Step 3 of 3)
 
-Final of three: second-brain-keep → second-brain-notion → **second-brain-verify**. Prereqs: steps 1 and 2 done (`keep inbox` works, labels created, `~/.config/freshie/config.json` written). Run inside the **client's Claude Code**.
+Final of three: second-brain-keep → second-brain-notion → **second-brain-verify**. Prereqs: steps 1 and 2 done (`keep inbox` works, labels created, Notion MCP connected to the client's workspace + template duplicated). Run inside the **client's Claude Code**.
 
-This step proves the clone is wired to the **client's** data, with one non-negotiable gate: a task must land in the **client's** Notion, never Andrew's.
+This step proves the clone is wired to the **client's** data, with one non-negotiable gate: a task must land in the **client's** Notion.
 
 ---
 
 ## Smoke test (~10 min)
 Run in order; stop and fix if any step fails.
 
-1. **Config repoint:** `norg projects` → returns the **client's** projects (template-only/empty is fine). Proves `norg` reads their `config.json`, not Andrew's defaults.
+1. **Notion resolves:** `notion-search "My Projects"` returns the client's My Projects database (template-only/empty projects is fine), and `notion-fetch` on it shows `default_page_template`. Proves the MCP is on **their** workspace and find-by-name + template discovery work.
 2. **Keep classification:** create a note in the client's Google Keep → `/keep-organizer` → it files the note under one of **their** Phase-2 topic labels.
-3. **🚩 The critical gate — Notion write goes to the CLIENT:** `/keep-router` on a note carrying a routing label → on confirm, a **task row appears in the CLIENT's task list** (open their Notion and confirm it's there, NOT in Andrew's). If it lands in Andrew's hub, the `config.json` IDs are wrong — fix `second-brain-notion` Phase 4 before anything else.
-4. **Template-applied project:** `/notion-project-skill` once → a project page is created in the client's Notion **with the template applied** (the "Project Tasks" linked view renders). Proves `project_template_id` + DB ids come from config.
+3. **🚩 The critical gate — Notion write goes to the CLIENT:** `/keep-router` on a note carrying a routing label → on confirm, a **task row appears in the CLIENT's task list** (open their Notion and confirm it's there). If it lands anywhere else, the Notion MCP is signed into the wrong workspace — fix `second-brain-notion` Phase 1 before anything else.
+4. **Template-applied project:** `/notion-project-skill` once → a project page is created in the client's Notion **with the template applied** (the "Project Tasks" linked view renders). Proves the discovered `template_id` + by-name data sources work.
 5. **Task linked to project:** confirm the project's tasks show the grey-circle icon and link back correctly.
 
 If all five pass, the clone is live. ✅

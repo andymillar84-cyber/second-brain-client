@@ -20,16 +20,18 @@ Andrew runs his life out of one Notion hub, **"Freshie"**. When he has a *projec
 
 The single most important idea: **tasks are not checkboxes typed into the project page body.** They are rows in his master **My Task List** database, linked back to the project via a relation. The project page shows them through a pre-filtered linked view called "Project Tasks". Get this wrong and the tasks won't appear on the project. The recipe below gets it right.
 
-## Resolve the target workspace FIRST (config-aware)
+## Resolve the data sources by name FIRST (MCP, config-less)
 
-Before using **any** ID in this skill, check for `~/.config/freshie/config.json`:
+This skill talks to Notion **only through the connected Notion MCP** — there is no CLI and no `config.json`. The MCP is OAuth-scoped to whichever workspace the user connected, so every read/write is automatically confined to **their** Notion; there is no hardcoded ID that could leak a write into anyone else's workspace.
 
-- **If it exists** (a cloned / client machine): use its values — they **override every hardcoded ID below**. Map: `proj_ds` → My Projects data source · `task_ds` → My Task List data source · `bucket_ds` → My Life Buckets data source · `project_template_id` → New Project template · `hub_page_id` → org hub. The IDs in the System Map are **fallback defaults only**.
-- **If it's absent** (Andrew's own machine): use the System Map defaults as-is — behaviour is unchanged.
+Because nothing is hardcoded, resolve the three data sources + the template **live, by name** at the start of the run, then reuse them for the whole session:
 
-> ⛔ **If `config.json` exists you MUST route every create / search / query to its IDs.** Writing to a hardcoded default while a client config is present creates the client's project *inside Andrew's Notion* — the exact isolation failure this guards against. If unsure, print the IDs you're about to use and confirm they match `config.json` before writing.
+1. **My Projects, My Task List, My Life Buckets** — `notion-search` each name (`query_type: "internal"`); take the `database` hit and keep its id as the data-source id (used as `collection://<id>`).
+2. **New Project template** — `notion-fetch` the My Projects data source; read `default_page_template` from its `<data-source-state>` (e.g. `…/p/66350211b92283eb84ae81fe347074e3`). The page id in that URL **is** the `template_id` for step 5.
 
-Quick read: `python3 -c 'import json,os;p=os.path.expanduser("~/.config/freshie/config.json");print(json.load(open(p)) if os.path.exists(p) else "no config — using Andrew defaults")'`
+> If a name returns **more than one** database (the user's workspace has more than just the duplicated Second Brain template), prefer the one living under their "Second Brain OS" hub and, if still ambiguous, show the candidates and ask which to use — don't guess. In a clean single-template workspace there's exactly one of each, so this is usually a non-event.
+
+The IDs in the **System Map** below are an illustrative example from one workspace — **never paste them into a write**; always use the ones you just resolved.
 
 ## Workflow
 
@@ -90,21 +92,21 @@ Pressure-test the tasks — don't just transcribe them. Whether a task came from
 
 ### 5. Create the project page
 
-**First, check it doesn't already exist.** Search My Projects for the name — `notion-search` with `query: "<name>"` and `data_source_url: "collection://a2050211-b922-830a-8cf0-876a231ef27a"`. If a same-or-similar project turns up, stop and ask Andrew whether to add tasks to that one or make a new one — don't silently duplicate, because the API can't hard-delete pages and a stray project then has to be archived by hand.
+**First, check it doesn't already exist.** Search My Projects for the name — `notion-search` with `query: "<name>"` and `data_source_url: "collection://<My Projects ds id resolved by name>"`. If a same-or-similar project turns up, stop and ask the user whether to add tasks to that one or make a new one — don't silently duplicate, because the API can't hard-delete pages and a stray project then has to be archived by hand.
 
 Create one page in the **My Projects** data source, applying the **New Project template** — the template is what auto-builds the inline "Project Tasks" linked view and wires its filter to this new page. Without the template you get a bare page and the tasks won't render.
 
-> **⛔ The template can ONLY be applied via the MCP `notion-create-pages` tool with `template_id`.** The Notion public REST API — and therefore `notion-pp-cli`, `norg`, and any Bash-driven sub-agent — **rejects `template_id` with `HTTP 400: body.template_id should be not present`**. Create the project with the MCP tool **from the main agent** (sub-agents shelling to the CLI hit the 400 wall). **Never "fall back" to a plain page if the MCP call seems to fail — stop and tell Andrew.** Silently creating a templateless plain page is exactly the bug that produced 5 malformed projects on 2026-05-24. (`norg project create` is deliberately hard-disabled and will refuse with a STOP banner.) Full context: `LESSONS.md` → "Notion project template can ONLY be applied via the MCP create-pages tool".
+> **⛔ The template can ONLY be applied via the MCP `notion-create-pages` tool with `template_id`.** The Notion public REST API **rejects `template_id` with `HTTP 400: body.template_id should be not present`**, so this must be a real `notion-create-pages` call **from the main agent** — never a sub-agent shelling out to the REST API. **Never "fall back" to a plain page if the MCP call seems to fail — stop and tell the user.** Silently creating a templateless plain page produces a broken project with no "Project Tasks" view (the bug that made 5 malformed projects on 2026-05-24).
 
 ```
 notion-create-pages
-  parent: { type: "data_source_id", data_source_id: "<proj_ds from config.json, else a2050211-b922-830a-8cf0-876a231ef27a>" }
+  parent: { type: "data_source_id", data_source_id: "<My Projects ds id resolved by name>" }
   pages: [{
     properties: {
       "Name": "<project name>",
       "My Life Buckets": "[\"<bucket page url>\"]"
     },
-    template_id: "<project_template_id from config.json, else c0650211-b922-8379-ae4c-01fddbadb514>"
+    template_id: "<default_page_template page id, from notion-fetch on the My Projects ds>"
   }]
 ```
 
@@ -131,7 +133,7 @@ Each task is a row in the **My Task List** data source, linked to the project. C
 
 ```
 notion-create-pages
-  parent: { type: "data_source_id", data_source_id: "<task_ds from config.json, else c0050211-b922-82c1-9bc6-076a4be40378>" }
+  parent: { type: "data_source_id", data_source_id: "<My Task List ds id resolved by name>" }
   pages: [
     {
       icon: "icons/circle-alternate_gray",
@@ -161,8 +163,8 @@ Per-task rules:
 Andrew does not want to open Notion later and discover mistakes, so treat this as a real QA pass, not a glance. Fetch the project page and fetch the tasks back, check every item below, and **fix anything that's off before you report** — if a write didn't take, redo it and re-verify.
 
 Project checks:
-- **Verify via the data-source query, NOT `pages retrieve-a`.** `retrieve-a` returns a stale cache right after creation (shows `buckets=0` / `icon=null` even when they're set). The live truth is in `data-sources query data-source a2050211-… --no-cache`. Always confirm project state there.
-- `Status` matches what was agreed — by default that's **blank / No Status**, which is correct; only expect Fav or Ongoing if Andrew explicitly chose it.
+- **Re-fetch the project page with `notion-fetch`** (using the URL the create call returned) rather than trusting the create response — a freshly-created page can read back stale (e.g. `buckets=0` even when the relation is set), so confirm against a fresh fetch and re-fetch after any fix.
+- `Status` matches what was agreed — by default that's **blank / No Status**, which is correct; only expect Fav or Ongoing if the user explicitly chose it.
 - The bucket relation actually attached — `My Life Buckets` populated, not empty. **This is the one most likely to have silently dropped** (template expansion eats it); if empty, re-set it with `notion-update-page` and re-check.
 - The outcome **comment** is present.
 - The inline "Project Tasks" view exists — the page body should contain the template's `child_database` linked-view blocks (currently 3; the exact count matters less than that there are **some**). That's the template's signature; a templateless plain page has **none**, which is the failure to catch.
@@ -190,24 +192,24 @@ The combination tells Andrew, at a glance, what to grab first: scan for `⏰ Urg
 Projects are filed under a life area via the **My Life Buckets** relation on the project. The common one is **Business** (most of Andrew's projects). Resolve the bucket's page URL at runtime instead of trusting a hardcoded id — search the buckets data source by name:
 
 ```
-notion-search  query: "Business"  data_source_url: "collection://c8550211-b922-8371-84e7-87ce15587470"
+notion-search  query: "<bucket name>"  data_source_url: "collection://<My Life Buckets ds id resolved by name>"
 ```
 
-Freshie's buckets: **Business** (the default for work projects), 🏥 MAMA Clinic, 🎥 Personl Brand *(Andrew's spelling — keep it)*, ⚙️ Systems and Energy, 🚀 Moonshots, Life Admin, 🌱 Real Humans. Business's page id is `f1d50211-b922-829d-af5a-015773f50f80` — fine as a fast path, but verify if a write fails.
+The user's buckets come from the duplicated template (they may have renamed them in `second-brain-notion`). Pick the bucket that best fits the project — usually a work/business one for most projects. Resolve its page URL by name at runtime; don't assume a fixed set or a hardcoded bucket id.
 
-## System Map (the concrete IDs)
+## System Map (illustrative only — resolve live, never paste)
 
-> **These are fallback defaults (Andrew's workspace).** On a client machine they are **overridden by `~/.config/freshie/config.json`** — see "Resolve the target workspace FIRST" at the top. The matching `config.json` key is noted per row.
+> **⚠️ Example IDs from one workspace.** Do **not** use these in a write. Resolve the real ones by name each run (see "Resolve the data sources by name FIRST"). The "how to get it" column is the source of truth.
 
-| Thing | ID / value | config.json key |
+| Thing | Example ID | How to get it live |
 |---|---|---|
-| My Projects data source | `a2050211-b922-830a-8cf0-876a231ef27a` | `proj_ds` |
-| New Project template | `c0650211-b922-8379-ae4c-01fddbadb514` | `project_template_id` |
-| My Task List data source | `c0050211-b922-82c1-9bc6-076a4be40378` | `task_ds` |
-| My Life Buckets data source | `c8550211-b922-8371-84e7-87ce15587470` | `bucket_ds` |
-| Business bucket page | `f1d50211-b922-829d-af5a-015773f50f80` | *(resolved by name)* |
+| My Projects data source | `a2050211-b922-830a-8cf0-876a231ef27a` | `notion-search "My Projects"` → database hit |
+| New Project template | `c0650211-b922-8379-ae4c-01fddbadb514` | `notion-fetch` My Projects ds → `default_page_template` |
+| My Task List data source | `c0050211-b922-82c1-9bc6-076a4be40378` | `notion-search "My Task List"` → database hit |
+| My Life Buckets data source | `c8550211-b922-8371-84e7-87ce15587470` | `notion-search "My Life Buckets"` → database hit |
+| A bucket page | `f1d50211-b922-829d-af5a-015773f50f80` | `notion-search "<bucket name>"` in the buckets ds |
 | Task circle icon | `icons/circle-alternate_gray` | *(constant)* |
-| Org hub page (Freshie) | `30e50211-b922-833e-82ae-8173e7cc0e16` | `hub_page_id` |
+| Org hub page (Second Brain OS) | `30e50211-b922-833e-82ae-8173e7cc0e16` | `notion-search` the hub page by name |
 
 **Project (My Projects) properties:** `Name` (title), `Status` (select), `Deadline` (date), `My Life Buckets` (relation → buckets).
 

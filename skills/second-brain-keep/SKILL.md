@@ -17,24 +17,30 @@ notion task · today · tomorrow · next 3 days · notion new project idea · no
 ```
 
 ## Handover folder (Andrew brings to the client's Mac)
-Copy over (USB / git / AirDrop): `keep_cli.py`, `norg`, `notion-pp-cli` (Mac binary — check arch), `exchange_token.py`, the flow skills (`keep-organizer`, `keep-router`, `notion-project-skill`), and the three `second-brain-*` skills. (The public Notion template URL is baked into `second-brain-notion` Phase 2 — nothing to carry over.) Sources on Andrew's machine: `keep`→`~/.claude/skills/keep-organizer/scripts/keep_cli.py`; `norg`→`~/.local/bin/norg`; `notion-pp-cli`→`~/printing-press/library/notion/notion-pp-cli`; `exchange_token.py`→`active/keep-organizer/`.
+Copy over (USB / git / AirDrop): `keep_cli.py`, `exchange_token.py`, the flow skills (`keep-organizer`, `keep-router`, `notion-project-skill`), and the three `second-brain-*` skills. **Notion needs no binaries** — it runs entirely through the client's Notion MCP connector (set up in `second-brain-notion`). (The public Notion template URL is baked into `second-brain-notion` Phase 2 — nothing to carry over.) Sources on Andrew's machine: `keep`→`~/.claude/skills/keep-organizer/scripts/keep_cli.py`; `exchange_token.py`→`active/keep-organizer/`.
 
 ---
 
 ## Phase 0 — Install assets (~3 min)
 1. Copy the flow skills + the three `second-brain-*` skills into `~/.claude/skills/`.
-2. Place binaries/scripts:
+2. Place scripts:
    - `keep_cli.py` → `~/.claude/skills/keep-organizer/scripts/keep_cli.py`; `ln -sf` it to `~/.local/bin/keep`.
-   - `norg` → `~/.local/bin/norg` (`chmod +x`).
-   - `notion-pp-cli` → **`~/printing-press/library/notion/notion-pp-cli`** (this exact path — `norg` calls it there; `mkdir -p` the dirs). Confirm Mac arch; `go build` if mismatched. *(Used in step 2, but place it now.)*
    - `exchange_token.py` → anywhere handy (used in Phase 1).
+   *(No Notion binaries — Notion is MCP-only, wired in `second-brain-notion`.)*
 3. Ensure `~/.local/bin` is on `PATH`. `uv tool install keep-mcp` (Keep MCP, for the connector).
-4. Check: `keep --help` and `norg --help` both run.
+4. Check: `keep --help` runs.
 
 ## Phase 1 — Keep auth (the flakiest step) (~5 min)
-Get the client's Google **master token** so `keep` can read/write their Keep:
-1. In the client's Chrome, open `accounts.google.com/EmbeddedSetup`, sign in as the client, copy the `oauth_token` cookie (`oauth2_4/...`).
-2. Exchange it for a master token (see `keep-organizer` SKILL.md "Token refresh", or `exchange_token.py`):
+Get the client's Google **master token** so `keep` can read/write their Keep.
+
+> ⏱️ **Why this is flaky — and how to beat it.** The `oauth_token` cookie (`oauth2_4/…`) is a **single-use, short-lived authorization code**. It gets "denied" during setup for three reasons, all about handling — not a bad account:
+> 1. **Latency** — you grab the cookie, then fumble windows/pasting, and by the time the exchange runs it has **expired** (the window is ~1–2 min).
+> 2. **Reuse** — once exchanged (or once Google's own flow consumes it), the **same value can never be exchanged again**; retrying it always denies.
+> 3. **Partial copy** — the value got truncated or URL-mangled.
+>
+> **So do this:** stage the exchange command **first** (email filled in, cursor ready), **then** grab a **fresh** cookie and exchange it within seconds. **One cookie = one attempt** — if it denies, don't retry the same value: **reload `EmbeddedSetup` to mint a new cookie** and exchange that.
+
+1. **Stage the command first.** Paste this into the terminal with the client's email filled in, but **don't run it yet** — leave the cursor after `GKEEP_OAUTH_TOKEN="` ready to drop the token in:
    ```bash
    GKEEP_EMAIL="<client@email>" GKEEP_OAUTH_TOKEN="oauth2_4/..." \
    uv run --no-project --with gpsoauth python3 -c '
@@ -42,8 +48,10 @@ Get the client's Google **master token** so `keep` can read/write their Keep:
    r=gpsoauth.exchange_token(os.environ["GKEEP_EMAIL"],os.environ["GKEEP_OAUTH_TOKEN"],"0123456789abcdef")
    print(r.get("Token") or r)'
    ```
-3. Write the `aas_et/...` token to `~/.config/keep-cli/token` (and into the keep-mcp env block in `~/.claude.json` if using the connector). The CLI reads it fresh each call.
-4. **Verify:** `keep inbox` returns JSON (their notes), not an auth error. **Do not proceed until this passes.**
+2. **Grab a fresh cookie, then run immediately.** In the client's Chrome, open `accounts.google.com/EmbeddedSetup`, sign in as the client, copy the **full** `oauth_token` cookie value (`oauth2_4/…`), paste it into the staged command, and **run it now** — minimise the gap.
+3. **If it denies / `Token` not in the response:** the cookie's spent. **Reload `EmbeddedSetup`** to get a fresh `oauth_token` and retry step 2 — never re-paste the old value.
+4. On success, write the `aas_et/...` token to `~/.config/keep-cli/token` (and into the keep-mcp env block in `~/.claude.json` if using the connector — alongside `GKEEP_EMAIL`, or `keep inbox` fails *looking like* a bad token). The CLI reads it fresh each call.
+5. **Verify:** `keep inbox` returns JSON (their notes), not an auth error. **Do not proceed until this passes.**
 
 ## Phase 2 — Interview the client for topic labels (~8 min) — blend `process-interviewer`
 Invoke `process-interviewer` for the questioning discipline, scoped to ONE thing: their **topic-label vocabulary**. One question at a time, plain language:
@@ -65,9 +73,9 @@ keep create-label "next 3 days"; keep create-label "notion new project idea"; ke
 Confirm with `keep labels` — their Keep now carries their topic labels + the 6 routing labels. `keep-organizer`/`autolabel` will classify into these with zero code change.
 
 ## Next
-✅ Keep side done. **→ Run `second-brain-notion`** to wire Notion and point the flow at the client's databases.
+✅ Keep side done. **→ Run `second-brain-notion`** to connect the client's Notion MCP and duplicate the template.
 
 ## Gotchas
-- **Master-token extraction is the flakiest step** — if `keep inbox` errors, redo Phase 1; don't push past it.
+- **Master-token extraction is the flakiest step.** The `oauth_token` cookie is single-use and expires in ~1–2 min — stage the exchange command first, grab a **fresh** cookie, run within seconds, and if it denies reload `EmbeddedSetup` for a new cookie rather than retrying the spent one (full detail in Phase 1). If `keep inbox` still errors, redo Phase 1; don't push past it.
+- **`keep inbox` failing can be a missing email, not a bad token** — the keep-mcp env block in `~/.claude.json` needs `GKEEP_EMAIL` set alongside the token.
 - **Don't rename the 6 routing labels** — they're hardcoded across the flow.
-- **`notion-pp-cli` path is hardcoded in `norg`** — Phase 0 must place it at `~/printing-press/library/notion/notion-pp-cli` (needed in step 2).

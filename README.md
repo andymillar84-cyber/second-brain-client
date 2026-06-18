@@ -31,32 +31,33 @@ Plus **Claude Code**, signed into the client's own **paid** Claude account. (`gk
 git clone https://github.com/andymillar84-cyber/second-brain-client.git
 cd second-brain-client
 
-mkdir -p ~/.claude/skills ~/.local/bin ~/printing-press/library/notion ~/.hammerspoon
+mkdir -p ~/.claude/skills ~/.local/bin ~/.hammerspoon
 cp -R skills/* ~/.claude/skills/
-cp bin/norg ~/.local/bin/norg
 ln -sf ~/.claude/skills/keep-organizer/scripts/keep_cli.py ~/.local/bin/keep
-cp bin/notion-pp-cli ~/printing-press/library/notion/notion-pp-cli   # norg hard-codes this path
 cp capture/init.lua ~/.hammerspoon/init.lua
 cp -R autolabeller ~/second-brain-automation
-chmod +x ~/.local/bin/norg ~/printing-press/library/notion/notion-pp-cli
 grep -q '.local/bin' ~/.zshrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 ```
 
 Then: install the **superpowers** plugin (`claude plugin install superpowers@claude-plugins-official`, or
-via `/plugin`), add the **Notion MCP connector**, and **restart Claude Code** so it loads the 7 skills +
-superpowers. (`process-interviewer` is among the 7 skills — a dependency the Keep/Notion skills call.)
+via `/plugin`), add the **Notion MCP connector** (signed into the client's own Notion — this is the only
+Notion auth there is), and **restart Claude Code** so it loads the 7 skills + superpowers.
+(`process-interviewer` is among the 7 skills — a dependency the Keep/Notion skills call.)
+
+> **Notion is MCP-only.** There is no `norg`/`notion-pp-cli` binary and no `~/.config/freshie/config.json`.
+> The skills talk to Notion through the connected MCP and resolve every database by name, so writes can
+> only ever land in the workspace the client connected.
 
 ## 3. Run the skills, in order
 
 1. **`/second-brain-keep`** — Keep auth (cookie → master token; the flaky step) + create labels.
-2. **`/second-brain-notion`** — duplicate the published Notion template into the client's workspace
-   + write `~/.config/freshie/config.json` (the isolation gate — points everything at the client's
-   Notion, never Andrew's).
+2. **`/second-brain-notion`** — connect the client's Notion MCP + duplicate the published Notion
+   template into their workspace. (Isolation is the MCP login — no config file to write.)
 3. **Capture** — install the Keep PWA → `capture/detect-bundle-id.sh` → load `capture/extension/`
    unpacked in the browser → reload Hammerspoon.
 4. **`~/second-brain-automation/install.sh`** — load the hourly auto-labeller (after the Keep token exists).
-5. **`/second-brain-verify`** — the **isolation gate**: a routed task lands in the **client's** Notion,
-   nothing in Andrew's. Not done until this is green.
+5. **`/second-brain-verify`** — end-to-end smoke test: a routed task lands in the **client's** Notion.
+   Not done until this is green.
 
 ---
 
@@ -65,7 +66,6 @@ superpowers. (`process-interviewer` is among the 7 skills — a dependency the K
 | Folder | Contents | Lands at |
 |--------|----------|----------|
 | `skills/` | 7 skills (3 onboarding + keep-organizer / keep-router / notion-project-skill / process-interviewer) | `~/.claude/skills/` |
-| `bin/` | `norg`, `notion-pp-cli` | `~/.local/bin/` + `~/printing-press/library/notion/` |
 | `capture/` | Hammerspoon hotkey config + minimal-Keep MV3 extension | `~/.hammerspoon/` + browser |
 | `autolabeller/` | hourly Keep auto-labeller (its own `install.sh` loads launchd) | `~/second-brain-automation/` |
 

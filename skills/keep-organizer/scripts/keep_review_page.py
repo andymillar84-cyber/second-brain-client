@@ -24,9 +24,9 @@ Read selections back with: preview_eval(window.getReview())
      routing_label = one of the 6 routing label names, or null
      why = optional reason the user typed when he overrode the suggested label (self-improve loop)
      route_notes = free-text detail the user voice-dumped for a Notion-bound note (any "notion …" route), else null
-                   → flows to `norg task add --notes "<route_notes>"` at execution
+                   → flows to the task/project body in keep-router (Notion MCP) at execution
      route_project = Notion project name the user assigned (only for "notion task" route), else null
-                   → flows to `norg task add --project "<route_project>"` at execution
+                   → flows to the task's Project relation in keep-router (Notion MCP) at execution
 
 Styling: dark-mode design system — accent hues only.
 """

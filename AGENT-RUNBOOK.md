@@ -58,7 +58,7 @@ yourself.** Only stop for the few things you genuinely can't or shouldn't decide
 - 🔑 **Credentials / secrets** — Google master token, Notion token, any account login.
 - 🖱️ **GUI / consent steps** — Hammerspoon Accessibility, install the Keep PWA, "Load unpacked" extension, add the Notion connector.
 - 🚫 **Andrew's real accounts** or any `/Users/andrewmillar/` path — never touch them.
-- 🛡️ **THE ISOLATION GATE** — if `~/.config/freshie/config.json` is missing/empty, `norg` silently writes to **ANDREW's** Notion. **Never adapt around this.** Confirm the config points at the CLIENT before any Notion write.
+- 🛡️ **ISOLATION = the Notion MCP login.** Notion is MCP-only (no `norg`/`config.json`); writes can only land in whatever workspace the connector is signed into. Before any Notion write, confirm the MCP is on the **CLIENT's** workspace — never the wrong one.
 - 💥 Anything **destructive or irreversible**.
 
 **Always:** run terminal commands yourself & show Andrew · use ONLY the throwaway accounts · don't
@@ -91,11 +91,10 @@ Logs go to **`/Users/Shared/sb-test-logs/`** — both macOS accounts read it, so
   so do NOT assume "flaky token extraction" and redo the auth on a loop. `keep` reads BOTH the master
   token AND the Google email from the **keep-mcp env block in `~/.claude.json`** (mcpServers → keep-mcp
   → env): put `GOOGLE_MASTER_TOKEN` + `GOOGLE_EMAIL` *together* there. The token file alone leaves the email empty.
-- **`notion-pp-cli` is NOT on PATH — intentional.** `norg` calls it by absolute path
-  `~/printing-press/library/notion/notion-pp-cli`. Don't `which` it; just confirm that file exists + is executable.
+- **Notion is MCP-only.** There's no `norg`/`notion-pp-cli` binary and no `~/.config/freshie/config.json` to place or check — don't go looking for them. The skills resolve every Notion database by name through the connected MCP.
 - **The hourly auto-labeller shells `claude -p`** — must work HEADLESS (from launchd). If its first run
   logs a claude error, that's a real FINDING (note it) — the rest of the system still works without the hourly layer.
-- **Isolation is sacred** — `config.json` absent ⇒ writes hit **Andrew's** Notion. Verify it, never adapt around it.
+- **Isolation is the MCP login** — confirm the Notion connector is signed into the CLIENT's workspace before any write; never adapt around a wrong-workspace connection.
 
 ---
 
@@ -113,7 +112,7 @@ fresh post-restart session that reads RUN-LOG and carries on.
 ## Segment A — Foundation  *(no skills needed yet)*
 1. `whoami` → confirm it's the throwaway account, **not `andrewmillar`**. `mkdir -p /Users/Shared/sb-test-logs`. Log.
 2. Install supporting software per **README §1**; verify each with `which`. Log each (note any already present).
-3. Copy the system per **README §2** exactly; verify `which keep norg notion-pp-cli` all resolve. Log. *(This also copies the `process-interviewer` skill — a hard dependency the Keep/Notion skills call. No separate step.)*
+3. Copy the system per **README §2** exactly; verify `which keep` resolves (Notion needs no binary — it's MCP-only). Log. *(This also copies the `process-interviewer` skill — a hard dependency the Keep/Notion skills call. No separate step.)*
 4. **Install the superpowers plugin** — gives the agent `systematic-debugging` + auto-primes skill use for the rest of the install: `claude plugin install superpowers@claude-plugins-official`. If it can't find the marketplace, tell Andrew to run **`/plugin`** in Claude Code and install **superpowers** from the official list. Log. *(Loads on the restart below — not before.)*
 5. **Hand-off:** write a RUN-LOG line, then tell Andrew:
    *"Add the Notion MCP connector in Claude Code, restart it, then paste Kickoff B."* **STOP.** *(The restart loads the copied skills **and** the superpowers plugin together.)*
@@ -125,10 +124,9 @@ fresh post-restart session that reads RUN-LOG and carries on.
 3. Log the labels created. **Hand-off:** tell Andrew to paste Kickoff C. **STOP.**
 
 ## Segment C — Notion
-1. Read RUN-LOG. Confirm the Notion MCP connector tools are present. If not → debug doc, stop.
-2. Run **`/second-brain-notion`** — duplicate the published template (ask Andrew for the URL) + write
-   `~/.config/freshie/config.json`.
-3. Verify `config.json` exists and holds the **NEW** Notion's IDs (not Andrew's). Log it. **Hand-off:** Kickoff D. **STOP.**
+1. Read RUN-LOG. Confirm the Notion MCP connector tools are present **and signed into the NEW workspace**. If not → debug doc, stop.
+2. Run **`/second-brain-notion`** — connect the client's Notion MCP + duplicate the published template (URL is baked into the skill).
+3. Verify find-by-name resolves: `notion-search "My Projects"` returns the NEW workspace's database and `notion-fetch` on it shows `default_page_template`. Log it. **Hand-off:** Kickoff D. **STOP.**
 
 ## Segment D — Capture & Auto-labeller
 1. Read RUN-LOG. Do **README §3** capture steps (Keep PWA → `detect-bundle-id.sh` → load
